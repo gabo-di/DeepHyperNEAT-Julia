@@ -10,6 +10,7 @@ The code was tested with julia 1.7, it migth work with julia 1.6 but not less.
 An example is provided in the file xor.jl. You can run it the following
 
 julia> using Revise
+
 julia> includet("xor.jl")
 
 i.e., it assumes that you have instald Revise 
