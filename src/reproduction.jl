@@ -15,10 +15,10 @@ mutable struct Reproduction
 end
 
 
-Reproduction() = Reproduction(1, nothing, 1, Stagnation(1), 0.2)
+Reproduction(max_stagnation::Int) = Reproduction(1, nothing, 1, Stagnation(max_stagnation), 0.2)
 
 
-function create_new_population(self::Reproduction, num_genomes::Int)
+function create_new_population(self::Reproduction, num_genomes::Int, sheet_dimensions::Union{Nothing, Array{Int,1}})
     """
     Creates a fresh population
     num_genomes   --number of genomes to create for the population
@@ -29,7 +29,8 @@ function create_new_population(self::Reproduction, num_genomes::Int)
         gid = self.genome_indexer
         self.genome_indexer += 1
         # Create genome
-        new_genome = Genome(gid)
+        new_genome = Genome(gid, sheet_dimensions)
+
         new_genomes[gid] = new_genome
     end
     return new_genomes
@@ -100,7 +101,6 @@ function reproduce_with_species(self::Reproduction, species_set::SpeciesSet, pop
             push!(remaining_species, species)
         end
     end
-    
     # No species
     if isempty(remaining_species)
         species_set.species = Dict{Int,Species}()
@@ -158,8 +158,10 @@ function reproduce_with_species(self::Reproduction, species_set::SpeciesSet, pop
         # Only allow fractions of species members to reproduce
         reproduction_cutoff = Int(ceil( self.species_reproduction_threshold*length(old_species_members) ))
         # Use at least two parents no matter what the threshold fraction result is
-        reproduction_cutoff = max(reproduction_cutoff, 2)
+        reproduction_cutoff = min(max(reproduction_cutoff, 2),length(old_species_members))
+
         old_species_members = old_species_members[1:reproduction_cutoff]
+
         
         # Randomly choose parents and produce the number of offspring allotted to the species
         # NOTE: Asexual reproduction for now

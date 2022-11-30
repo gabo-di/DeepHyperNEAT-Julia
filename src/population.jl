@@ -26,12 +26,12 @@ mutable struct Population
 end
 
 
-function Population(key::Int, size::Int, elitism::Int=1, state::Union{Nothing, Tuple{Dict{Int,Genome}, Reproduction}}=nothing)
+function Population(key::Int, size::Int, max_stagnation::Int, elitism::Int=1, sheet_dimensions::Union{Nothing, Array{Int,1}}=nothing, state::Union{Nothing, Tuple{Dict{Int,Genome}, Reproduction}}=nothing)
     #Create new population  
-    species = SpeciesSet(3.5)
+    species = SpeciesSet(2.0)#(1.25)#(3.5)
     if isnothing(state)    
-        reproduction = Reproduction()    
-        population = create_new_population(reproduction, size )
+        reproduction = Reproduction(max_stagnation)    
+        population = create_new_population(reproduction, size, sheet_dimensions)
         speciate( species, population, 0)
     else
         population, reproduction = state
@@ -40,7 +40,7 @@ function Population(key::Int, size::Int, elitism::Int=1, state::Union{Nothing, T
 end    
 
 
-function run(self::Population, task::Function, goal::Real, generations::Int, log_report::Bool=false)
+function run(self::Population, task::Function, goal::Real, generations::Int, sheet_dimensions::Union{Nothing, Array{Int,1}}=nothing, log_report::Bool=false)
     """
     Run evolution on a given task for a number of generations or until
     a goal is reached.
@@ -113,7 +113,7 @@ function run(self::Population, task::Function, goal::Real, generations::Int, log
         # Check for species extinction (species did not perform well)
         if isempty(self.species.species)
             println("!!! Species went extinct !!!")
-            self.population = create_new_population(self.reproduction, self.size)
+            self.population = create_new_population(self.reproduction, self.size, sheet_dimensions)
         end
 
         # Speciate new population

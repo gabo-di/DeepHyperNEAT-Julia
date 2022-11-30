@@ -41,12 +41,12 @@ end
 
 
 function sharp_gauss_activation( x::Array{T,1} ) where{T<:Real}
-    return exp.(-100*(x).^2 )
+    return exp.(-4*(x).^2 )
 end
 
 
 function sharp_gauss_mu_2_activation( x::Array{T,1} ) where{T<:Real}
-    return exp.(-100*(x .- 2).^2 )
+    return exp.(-4*(x .- 2).^2 )
 end
 
 
@@ -70,6 +70,16 @@ function linear_activation( x::Array{T,1} ) where{T<:Real}
 end
 
 
+function abs_activation( x::Array{T,1} ) where{T<:Real}
+    return abs.(x)
+end
+
+
+function mod2_activation( x::Array{T,1} ) where{T<:Real}
+    return mod.(x, 2)
+end
+
+
 struct ActivationFunctionSet
     functions::Dict{Symbol,Function}
     ActivationFunctionSet() =  new( Dict(:softmax=>softmax_activation,
@@ -84,7 +94,9 @@ struct ActivationFunctionSet
                                          :relu=>relu_activation,
                                          :log=>log_activation,
                                          :exp=>exp_activation,
-                                         :linear=>linear_activation) )
+                                         :linear=>linear_activation,
+                                         :abs=>abs_activation,
+                                         :mod2=>mod2_activation) )
 end
 
 

@@ -170,8 +170,8 @@ function speciate(self::SpeciesSet, population::Dict{Int,Genome}, generation::In
         # from the current species representative
         for gid in unspeciated
             genome = population[gid]
-            genome_distance = distances(species.representative, genome)
-            push!(candidate_representatives, (genome_distance, genome))
+            genome_distance_val = distances(species.representative, genome)
+            push!(candidate_representatives, (genome_distance_val, genome))
         end
         # The new representative for the current species is the
         # closest to the current representative
@@ -192,10 +192,10 @@ function speciate(self::SpeciesSet, population::Dict{Int,Genome}, generation::In
         for (sid, rid) in iteritems(new_representatives)
             representative = population[rid]
             # Determine current genome's distance from representative
-            genome_distance = distances(representative, genome)
+            genome_distance_val = distances(representative, genome)
             # If it's below threshold, add it to list for adding to the species
-            if genome_distance < compatibility_threshold
-                push!(candidate_species, (genome_distance, sid))
+            if genome_distance_val < compatibility_threshold
+                push!(candidate_species, (genome_distance_val, sid))
             end            
         end
         # Add current genome to the species its most genetically similar to
@@ -230,7 +230,8 @@ function speciate(self::SpeciesSet, population::Dict{Int,Genome}, generation::In
         end    
     end
 end    
-    
+  
+
 function get_species_key(self::SpeciesSet, key::Int)
     return self.genome_to_species[key]
 end

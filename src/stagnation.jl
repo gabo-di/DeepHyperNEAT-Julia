@@ -13,8 +13,8 @@ mutable struct Stagnation
 end
 
 
-Stagnation(species_elitism::Int) = Stagnation(mean, nothing, 0, 15) #OOD in the original code
-
+#Stagnation(species_elitism::Int) = Stagnation(mean, nothing, 0, 15) #OOD in the original code 15
+Stagnation(max_stagnation::Int) = Stagnation(mean, nothing, 0, max_stagnation)
 
 function update(self::Stagnation, species_set::SpeciesSet, generation::Int)
     """

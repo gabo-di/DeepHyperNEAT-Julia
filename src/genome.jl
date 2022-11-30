@@ -14,7 +14,7 @@ weight_mutation_rate = 0.9
 weight_mutation_power = 0.1
 inc_depth_prob = 0.1
 inc_breadth_prob = 0.1
-
+bias_node_size = 0.1
 
 mutable struct ConnectionGene
     """
@@ -51,7 +51,7 @@ mutable struct NodeGene
 end    
 
 
-NodeGene(key::Int, node_type::String, activation::Function, mapping_tuple::Union{Tuple{Tuple{Int,Int},Tuple{Int,Int}},Nothing}) = NodeGene(node_type, key, 2*rand()-1, activation, 1.0, mapping_tuple)
+NodeGene(key::Int, node_type::String, activation::Function, mapping_tuple::Union{Tuple{Tuple{Int,Int},Tuple{Int,Int}},Nothing}) = NodeGene(node_type, key, bias_node_size*(2*rand()-1), activation, 1.0, mapping_tuple)
 
 
 mutable struct Genome
@@ -107,6 +107,36 @@ function Genome(key::Int)
                     Dict(1=>[0,1],0=>[0]))
     configure(genome)
     complexity(genome)
+    return genome
+end
+
+
+function Genome(key::Int,  sheet_dimensions::Union{Nothing, Array{Int,1}})
+    
+    genome = Genome(key)
+
+    if !isnothing(sheet_dimensions)
+        if (sheet_dimensions[2] > 1)
+            x = range(-1.0, 1.0, length=sheet_dimensions[2])  
+        elseif (sheet_dimensions[2] == 1)
+            x = [0.0]
+        else
+            x = []
+        end
+        if (sheet_dimensions[1] > 1)
+            y = range(-1.0, 1.0, length=sheet_dimensions[1])  
+        else
+            y = []
+        end
+
+        for xx in x
+            mutate_increment_bredth(genome)
+        end
+
+        for yy in y
+            mutate_increment_depth(genome)
+        end
+    end
     return genome
 end
 
@@ -283,7 +313,7 @@ function mutate_add_node(self::Genome, gen::Union{Int,Nothing}=nothing)
     delete!(self.connections, conn_to_split)
     # Create i/o connection from genome
     i, o = conn_to_split
-    create_connection(self, i, new_node.key, 1.0)
+    create_connection(self, i, new_node.key, 2*rand()-1)
     create_connection(self, new_node.key, o, old_weight)
     return nothing
 end
@@ -298,10 +328,10 @@ function mutate_add_connection(self::Genome, gen::Union{Int,Nothing}=nothing)
     # Gather possible target nodes and source nodes
     if isempty(self.nodes)
         return nothing
-    end
+    end    
     possible_targets = [ii for ii in iterkeys(self.nodes)]
     target_key = possible_targets[rand(1:length(possible_targets))]
-    possible_sources = vcat(possible_targets, self.input_keys)
+    possible_sources = vcat([ii for ii in iterkeys(self.nodes) if !(ii in self.output_keys)], self.input_keys)
     source_key = possible_sources[rand(1:length(possible_sources))]
     # Determine if new connection creates cycles. Currently, only
     # supports feed forward networks
@@ -390,7 +420,7 @@ function mutate_increment_depth(self::Genome, gen::Union{Int,Nothing}=nothing)
             # Add connections
             for conn in iterkeys(self.connections)
                 if conn[2] == bias_key
-                    n = create_connection(self, conn[1], new_bias_output_node.key, 0.0)
+                    n = create_connection(self, conn[1], new_bias_output_node.key, 0.0)  #OJO it can be 0.0 for not having bias in output 
                 end    
             end
             append!(self.output_keys, new_bias_output_node.key)   
@@ -406,7 +436,7 @@ function mutate_increment_depth(self::Genome, gen::Union{Int,Nothing}=nothing)
         end
     end
     
-    # Create two new gaussian nodes
+    # Create three new gaussian nodes
     gauss_1_node = create_node(self)
     gauss_1_node.activation = get(self.activations, :sharp_gauss)
     gauss_1_node.bias = 0.0
@@ -444,7 +474,7 @@ function mutate_increment_depth(self::Genome, gen::Union{Int,Nothing}=nothing)
 end
 
 
-function mutate_increment_bredth(self::Genome, gen::Union{Int,Nothing}=nothing)
+function mutate_increment_bredth(self::Genome, gen::Union{Int,Nothing}=nothing, layer::Union{Int,Nothing}=nothing)
     """
     Mutation for adding an output node gene to the genome allowing
     it to represent a new sheet to a preexisting layer in the encoded
@@ -455,11 +485,13 @@ function mutate_increment_bredth(self::Genome, gen::Union{Int,Nothing}=nothing)
     if self.num_layers <=2
         mutate_increment_depth(self)
     else
-        layer = rand(range(2,stop=self.num_layers-1))
+        if isnothing(layer)
+            layer = rand(range(2,stop=self.num_layers-1))
+        end
         # Find out how many sheets are represented by current CPPNONs
         num_sheets = length(self.substrate[layer])
-        sheet = rand(range(0,stop=num_sheets))
-        append!(self.substrate[layer], sheet)
+        sheet = rand(range(0,stop=num_sheets-1))
+        append!(self.substrate[layer], num_sheets)
         copied_sheet = (layer, sheet)
         keys_to_append = Int[]
         # Create bias
@@ -485,7 +517,6 @@ function mutate_increment_bredth(self::Genome, gen::Union{Int,Nothing}=nothing)
                 end
             end
         end
-        
         # Search for CPPNONs that contain the copied sheet
         for key in self.output_keys
             # Create CPPNONs to represent outgoing connections

@@ -5,7 +5,7 @@ functions from PurePLES (but are heavily modified for DeepHyperNEAT).
 Felix Sosa
 =#
 
-function decode(cppn::FeedForwardCPPN, input_dimensions::Array{Int,1}, output_dimensions::Int, sheet_dimensions::Union{Nothing, Array{Int,1}}=nothing)
+function decode(cppn::FeedForwardCPPN, input_dimensions::Array{Int,1}, output_dimensions::Int, sheet_dimensions::Union{Nothing, Array{Int,1}}=nothing; substrate_type::Int=1, act_func::Symbol=:relu, last_act_func::Symbol=:linear)
     """
     Decodes a CPPN into a substrate.
     cppn             -- CPPN
@@ -22,7 +22,7 @@ function decode(cppn::FeedForwardCPPN, input_dimensions::Array{Int,1}, output_di
     if (input_dimensions[1] > 1)
         y = range(-1.0, 1.0, length=input_dimensions[1])
     else
-        y = [0.0]
+        y = [-1.0]
     end    
     input_layer = [(x,y) for x in x for y in y]
 
@@ -32,10 +32,11 @@ function decode(cppn::FeedForwardCPPN, input_dimensions::Array{Int,1}, output_di
     else
         x = [0.0]
     end
-    y = [0.0]
+    y = [1.0]
     output_layer = [(x,y) for x in x for y in y] 
 
     # Create sheet coordinate map from given sheet dimensions (if any)
+    
     if !isnothing(sheet_dimensions)
         if (sheet_dimensions[2] > 1)
             x = range(-1.0, 1.0, length=sheet_dimensions[2])  
@@ -51,7 +52,7 @@ function decode(cppn::FeedForwardCPPN, input_dimensions::Array{Int,1}, output_di
     else
         sheet = input_layer
     end
-        
+         
     # Create list of mappings to be created between substrate sheets
     connection_mappings = [cppn.nodes[x].cppn_tuple for x in keys(cppn.output_nodes) if cppn.nodes[x].cppn_tuple[1] != (1,1)]
 
@@ -61,16 +62,34 @@ function decode(cppn::FeedForwardCPPN, input_dimensions::Array{Int,1}, output_di
     substrate[(1,0)] = input_layer
     substrate[(0,0)] = output_layer
     substrate[(1,1)] = [(0.0, 0.0)]
+    layers = gather_layers(substrate)
+    a = length(layers)
+    if a>2
+        for (key, yi ) in zip(keys(layers), range(-1.0, 1.0, length=a))
+            if key != 1 && key != 0
+                layer_length = length(layers[key])
+                if layer_length>1 
+                    x = range(-1.0, 1.0, length=layer_length) 
+                else
+                    x = [0.0]
+                end
+                for (keyi, xi) in zip(layers[key], x)
+                    substrate[keyi] = [(xi, yi)]
+                end                     
+            end
+        end
+    end
 
     # Create dictionary of output node IDs to their respective mapping tuples
     cppn_idx_dict = Dict(cppn.nodes[idx].cppn_tuple=>idx for idx in keys(cppn.output_nodes))
-
     # Create the substrate
-    return create_substrate(cppn, substrate, connection_mappings, cppn_idx_dict)    
+    return create_substrate(cppn, substrate, connection_mappings, cppn_idx_dict, layers; act_func = act_func, last_act_func = last_act_func, substrate_type = substrate_type)    
+
 end
 
 
-function create_substrate(cppn::FeedForwardCPPN, substrate::Dict{Tuple{Int,Int}, Array{Tuple{Float64, Float64}, 1}}, mapping_tuples::Array{Tuple{Tuple{Int,Int}, Tuple{Int,Int}}, 1}, id_dict::Dict{Tuple{Tuple{Int,Int},Tuple{Int,Int}},Int}, act_func::Symbol=:relu)
+function create_substrate(cppn::FeedForwardCPPN, substrate::Dict{Tuple{Int,Int}, Array{Tuple{Float64, Float64}, 1}}, mapping_tuples::Array{Tuple{Tuple{Int,Int}, Tuple{Int,Int}}, 1}, id_dict::Dict{Tuple{Tuple{Int,Int},Tuple{Int,Int}},Int}, layers::Dict{Int,Vector{Tuple{Int,Int}}};
+     act_func::Symbol=:relu, last_act_func::Symbol=:linear, substrate_type::Int=1)
     """
     Creates a neural network from a CPPN and substrate representation.
     Based on PurePLES. Copyright (c) 2017 Adrian Westh & Simon Krabbe Munck.
@@ -81,7 +100,6 @@ function create_substrate(cppn::FeedForwardCPPN, substrate::Dict{Tuple{Int,Int},
     act_func  -- optional argument for the activation function of the substrate
     """
     node_evals = Tuple{Int, Function, Function, Array{Tuple{Int, Float64}, 1}}[]
-    layers =  gather_layers(substrate)
 
     # Assign coordinates to input, output, and bias layers
     input_coordinates, output_coordinates, bias_coordinates = (substrate[(1,0)],(1,0)), (substrate[(0,0)],(0,0)), (substrate[(1,1)],(1,1))
@@ -107,7 +125,7 @@ function create_substrate(cppn::FeedForwardCPPN, substrate::Dict{Tuple{Int,Int},
     # Get activation function for substrate
     act_func_set = ActivationFunctionSet()
     hidden_activation = get( act_func_set, act_func)
-    output_activation = get( act_func_set, :linear)
+    output_activation = get( act_func_set, last_act_func)
     
     # Decode depending on whether there are hidden layers or not
     if !isempty(hidden_node_ids)
@@ -199,11 +217,16 @@ function create_substrate(cppn::FeedForwardCPPN, substrate::Dict{Tuple{Int,Int},
             end
         end    
     end
-    return FeedForwardSubstrate(input_node_ids, bias_node_ids, output_node_ids, node_evals)
+
+    if substrate_type == 1
+        return FeedForwardSubstrate(input_node_ids, bias_node_ids, output_node_ids, node_evals)
+    elseif substrate_type == 2
+        return FeedForwardSubstrate_2(input_node_ids, bias_node_ids, output_node_ids, node_evals)
+    end
 end
 
     
-function query_cppn(cppn::FeedForwardCPPN, source_coordinate::Tuple{Float64, Float64}, source_layer::Tuple{Array{Tuple{Float64, Float64}, 1}, Tuple{Int,Int}}, target_layer::Tuple{Array{Tuple{Float64, Float64}, 1}, Tuple{Int,Int}}, node_idx::Int, id_dict::Dict{Tuple{Tuple{Int,Int},Tuple{Int,Int}},Int}, max_weight::Float64=5.0)
+function query_cppn(cppn::FeedForwardCPPN, source_coordinate::Tuple{Float64, Float64}, source_layer::Tuple{Array{Tuple{Float64, Float64}, 1}, Tuple{Int,Int}}, target_layer::Tuple{Array{Tuple{Float64, Float64}, 1}, Tuple{Int,Int}}, node_idx::Int, id_dict::Dict{Tuple{Tuple{Int,Int},Tuple{Int,Int}},Int}, max_weight::Float64=5.0) #OJO max_weight::Float64=5.0
     """
     Given a single node's coordinates and a layer of nodes, query the CPPN for potential weights
     for all possible connections between the layer and the single node.
@@ -223,7 +246,12 @@ function query_cppn(cppn::FeedForwardCPPN, source_coordinate::Tuple{Float64, Flo
     cppnon_id = id_dict[mapping_tuple]
     for target_coordinate in target_coordinates
         i = [target_coordinate[1], target_coordinate[2], source_coordinate[1], source_coordinate[2]]
+        #println("")
+        #println(" cppnon_id ", cppnon_id, " mapping tuple ", mapping_tuple,  " coordinates ", i)
+        #println(" result ", activate(cppn, i))
+        #println("")
         w = activate(cppn, i)[cppnon_id]
+
         if abs(w) < max_weight
             push!(node_connections, (node_idx, w*max_weight))
         elseif abs(w) > max_weight
@@ -232,7 +260,7 @@ function query_cppn(cppn::FeedForwardCPPN, source_coordinate::Tuple{Float64, Flo
             push!(node_connections, (node_idx, 0.0))
         end    
         node_idx += 1
-    end    
+    end
     return node_connections
 end
 

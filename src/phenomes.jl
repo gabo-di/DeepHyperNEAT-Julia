@@ -112,14 +112,14 @@ mutable struct FeedForwardCPPN
     """
     input_nodes::Array{Int,1} 
     output_nodes::Dict{Int,Tuple{Tuple{Int,Int},Tuple{Int,Int}}}
-    node_evals::Array{ Tuple{ Int, Function, Function, Array{Tuple{Int,Float64},1} } ,1}
+    node_evals::Array{ Tuple{ Int, Function, Function, Array{Tuple{Int,Float64},1}, Float64 } ,1}
     values::Dict{Int,Float64}
     nodes::Union{Nothing,Dict{Int,NodeGene}}
 end
 
 
 function FeedForwardCPPN(inputs::Array{Int,1}, outputs::Dict{Int,Tuple{Tuple{Int,Int},Tuple{Int,Int}}},
-    node_evals::Array{ Tuple{ Int, Function, Function, Array{Tuple{Int,Float64},1}},1},
+    node_evals::Array{ Tuple{ Int, Function, Function, Array{Tuple{Int,Float64},1}, Float64},1},
     nodes::Union{Nothing,Dict{Int,NodeGene}}=nothing, mapping_tuples::Union{Nothing,Dict{Int,Tuple{Tuple{Int,Int},Tuple{Int,Int}}}}=nothing )
     input_nodes = inputs
     if isnothing(mapping_tuples)
@@ -142,12 +142,12 @@ function activate(self::FeedForwardCPPN, inputs::Array{Float64, 1})
     end
     
 
-    for (node, act_func, agg_func, incoming_connections) in self.node_evals
+    for (node, act_func, agg_func, incoming_connections, bias) in self.node_evals
         node_inputs = Float64[]
         for (node_id, conn_weight) in incoming_connections
             append!(node_inputs, self.values[node_id]*conn_weight)
         end
-        s = agg_func(node_inputs)
+        s = agg_func(node_inputs) + bias
         self.values[node] = act_func([s])[1]
     end
     return self.values
@@ -157,7 +157,7 @@ end
 function CPPN_create(genome::Genome)
     connections = [cg.key for cg in itervalues(genome.connections) if cg.enabled]
     layers = feed_forward_layers(genome.input_keys, genome.output_keys, connections)
-    node_evals = Tuple{Int, Function, Function, Array{Tuple{Int, Float64}, 1}}[] 
+    node_evals = Tuple{Int, Function, Function, Array{Tuple{Int, Float64}, 1}, Float64}[] 
     mapping_tuples = Dict{Int,Tuple{Tuple{Int,Int},Tuple{Int,Int}}}()
     # Traverse layers
     for layer in layers
@@ -174,7 +174,7 @@ function CPPN_create(genome::Genome)
             # Gather node gene information
             node_gene = genome.nodes[node]
             activation_function = node_gene.activation
-            push!(node_evals, (node, activation_function, sum, incoming_connections))
+            push!(node_evals, (node, activation_function, sum, incoming_connections, node_gene.bias))
         end
     end
     # Gather mapping tuples
@@ -253,3 +253,51 @@ function Substrate_create(genome::Genome)
     end
     return FeedForwardSubstrate(genome.input_keys, genome.bias_keys, genome.output_keys, node_evals)
 end    
+
+
+mutable struct FeedForwardSubstrate_2
+    input_nodes::Array{Int,1} 
+    bias_node::Array{Int,1}
+    output_nodes::Array{Int,1}
+    node_evals::Array{ Tuple{ Int, Function, Function, Array{Tuple{Int,Float64},1} } ,1}
+    values::Dict{Int,Float64}   
+end
+
+
+function FeedForwardSubstrate_2(inputs::Array{Int,1}, bias::Array{Int,1}, outputs::Array{Int,1}, node_evals::Array{ Tuple{ Int, Function, Function, Array{Tuple{Int,Float64},1} } ,1})
+    input_nodes = inputs
+    bias_nodes = bias
+    output_nodes = outputs
+    values = Dict(key=>0.0 for key in union(Set(inputs), Set(outputs))) 
+    return FeedForwardSubstrate_2(input_nodes, bias_nodes, output_nodes, node_evals, values)
+end
+
+
+function activate(self::FeedForwardSubstrate_2, inputs::Array{Float64, 1})
+    if (length(self.input_nodes) + length(self.bias_node)) != length(inputs)
+        return nothing
+    end
+    
+    for (k, v) in zip(self.input_nodes, inputs)
+        self.values[k] = log_activation([v])[1]
+    end
+    
+    bias = inputs[end]
+    self.values[self.bias_node[1]] = bias
+    evaluations = reverse(self.node_evals)
+    cont = 0
+    for (node, act_func, agg_func, links) in evaluations
+        node_inputs = Float64[]
+        for (i, w) in links
+            if node in self.output_nodes && cont>0
+                append!(node_inputs, exp_activation([self.values[i]])[1]*w)
+            else
+                append!(node_inputs, self.values[i]*div(w,bias)*bias)
+            end
+        end
+        s = agg_func(node_inputs)
+        self.values[node] = act_func([s])[1]
+        cont += 1
+    end
+    return [self.values[i] for i in self.output_nodes]
+end
