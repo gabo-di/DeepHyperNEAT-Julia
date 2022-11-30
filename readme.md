@@ -5,6 +5,8 @@ which itself takes some things from PurePLES python code in https://github.com/u
 
 The code was tested with julia 1.7, it migth work with julia 1.6 but not less. 
 
+The "main" branch code is a copy of Felix Sosa's code. We recommend to use the branch "start_modified" since we made some improvements in the code there.
+
 ## Example
 
 An example is provided in the file xor.jl. You can run it the following
